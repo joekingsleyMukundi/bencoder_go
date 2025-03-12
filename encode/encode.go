@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"reflect"
+	"sort"
 )
 
 type BencodeTypes interface {
@@ -15,18 +17,19 @@ func BencodeEncode[T BencodeTypes](data T) (string, error) {
 }
 func bencodeHelper(data any) (string, error) {
 	var buf bytes.Buffer
+	v := reflect.ValueOf(data)
 
-	switch v := data.(type) {
-	case int, int64:
-		buf.WriteString(fmt.Sprintf("i%de", v))
+	switch v.Kind() {
+	case reflect.Int, reflect.Int64:
+		buf.WriteString(fmt.Sprintf("i%de", v.Int()))
 
-	case string:
-		buf.WriteString(fmt.Sprintf("%d:%s", len(v), v))
+	case reflect.String:
+		buf.WriteString(fmt.Sprintf("%d:%s", len(v.String()), v.String()))
 
-	case []any:
+	case reflect.Slice:
 		buf.WriteString("l")
-		for _, item := range v {
-			encoded, err := bencodeHelper(item)
+		for i := range v.Len() {
+			encoded, err := bencodeHelper(v.Index(i).Interface())
 			if err != nil {
 				return "", err
 			}
@@ -34,20 +37,58 @@ func bencodeHelper(data any) (string, error) {
 		}
 		buf.WriteString("e")
 
-	case map[string]any:
+	case reflect.Map:
+		if v.Type().Key().Kind() != reflect.String {
+			return "", errors.New("bencode only supports maps with string keys")
+		}
 		buf.WriteString("d")
-		for k, val := range v {
+		keys := make([]string, 0, v.Len())
+		for _, key := range v.MapKeys() {
+			keys = append(keys, key.String())
+		}
+		sort.Strings(keys)
+		for _, k := range keys {
 			keyEncoded, err := bencodeHelper(k)
 			if err != nil {
 				return "", err
 			}
-			valEncoded, err := bencodeHelper(val)
+			valEncoded, err := bencodeHelper(v.MapIndex(reflect.ValueOf(k)).Interface())
 			if err != nil {
 				return "", err
 			}
 			buf.WriteString(keyEncoded + valEncoded)
 		}
 		buf.WriteString("e")
+	case reflect.Struct:
+		buf.WriteString("d")
+		t := v.Type()
+		keys := make([]string, 0, v.NumField())
+		fieldMap := make(map[string]string)
+
+		for i := 0; i < v.NumField(); i++ {
+			field := t.Field(i)
+			bencodeTag := field.Tag.Get("bencode")
+			if bencodeTag == "" {
+				bencodeTag = field.Name // Use field name if no tag
+			}
+			keys = append(keys, bencodeTag)
+			fieldEncoded, err := bencodeHelper(v.Field(i).Interface())
+			if err != nil {
+				return "", err
+			}
+			fieldMap[bencodeTag] = fieldEncoded
+		}
+
+		sort.Strings(keys) // Ensure dictionary keys are sorted
+		for _, k := range keys {
+			keyEncoded, err := bencodeHelper(k)
+			if err != nil {
+				return "", err
+			}
+			buf.WriteString(keyEncoded + fieldMap[k])
+		}
+		buf.WriteString("e")
+
 	default:
 		return "", errors.New("unsupported data type for Bencode")
 	}
