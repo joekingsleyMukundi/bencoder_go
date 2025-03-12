@@ -39,5 +39,5 @@ func TestBencodeEncodeDictionary(t *testing.T) {
 		"age":  25,
 	})
 	assert.Nil(t, err)
-	assert.Equal(t, "d4:name5:Alice3:agei25ee", result)
+	assert.Equal(t, "d3:agei25e4:name5:Alicee", result)
 }
