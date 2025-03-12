@@ -102,11 +102,11 @@ func decodeList[T any](buffer *bytes.Buffer) ([]T, error) {
 	if _, err := buffer.ReadByte(); err != nil {
 		return result, err
 	}
-	var list []T
+	list := []T{}
 	for {
 		b, err := buffer.ReadByte()
 		if err != nil {
-			return nil, errors.New("unterminated list")
+			return result, errors.New("unterminated list")
 		}
 		if b == 'e' {
 			return list, nil
@@ -114,7 +114,7 @@ func decodeList[T any](buffer *bytes.Buffer) ([]T, error) {
 		buffer.UnreadByte()
 		item, err := decodeElement[T](buffer)
 		if err != nil {
-			return nil, err
+			return result, err
 		}
 		list = append(list, item)
 	}
